@@ -57,6 +57,17 @@ export default function Home() {
       content: null,
     }))
   );
+  const [rows, setRows] = useState<Record<number, Cell[]>>(
+    Object.fromEntries(
+      Array.from({ length: 30 }, (_, index) => [
+        index,
+        Array.from({ length: 26 }, (_, idx) => ({
+          id: `${getExcelColumnName(idx)}${index + 1}`,
+          content: null,
+        })),
+      ])
+    )
+  );
   const [draggables, setDraggables] = useState(INITIAL_KEYS);
   const [files, setFiles] = useState<File[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -70,27 +81,36 @@ export default function Home() {
   }, []);
 
   const handleDrop = useCallback(
-    (cellId: string, itemId: string) => {
-      setCells((prevCells) =>
-        prevCells.map((cell) => {
-          const isTargetCell = cell.id === cellId;
-          const hasSameContent = cell.content === itemId;
+    (cellId: string, content: string) => {
+      setRows((prev) => {
+        const targetKey = Number(cellId.replace(/[A-Za-z]+/g, "")) - 1;
 
-          if (isTargetCell)
-            return { ...cell, content: hasSameContent ? null : itemId };
+        const updatedRows = Object.entries(prev).reduce((acc, [key, row]) => {
+          const rowIndex = Number(key);
+          acc[rowIndex] = row.map((cell) => {
+            const isTarget = rowIndex === targetKey && cell.id === cellId;
+            const hasSameContent = cell.content === content;
 
-          if (hasSameContent) return { ...cell, content: null };
+            if (isTarget)
+              return { ...cell, content: hasSameContent ? null : content };
 
-          return cell;
-        })
-      );
+            if (hasSameContent) return { ...cell, content: null };
+
+            return cell;
+          });
+
+          return acc;
+        }, {} as Record<number, (typeof prev)[number]>);
+
+        return updatedRows;
+      });
 
       setDraggables((prev) => {
         const replacedKey = cells.find((c) => c.id === cellId)?.content;
         const updated = replacedKey
           ? [...prev, { key: replacedKey }]
           : [...prev];
-        return updated.filter((d) => d.key !== itemId);
+        return updated.filter((d) => d.key !== content);
       });
     },
     [cells]
@@ -106,10 +126,18 @@ export default function Home() {
   );
 
   const addColumn = useCallback(() => {
-    setCells((prev) => [
-      ...prev,
-      { id: getExcelColumnName(prev.length), content: null },
-    ]);
+    setRows((prev) => {
+      const newRows = { ...prev };
+      Object.entries(newRows).forEach(([i, cell], idx) => {
+        const newRow = [...newRows[Number(i)]];
+        newRow.push({
+          id: `${getExcelColumnName(newRow.length)}${idx + 1}`,
+          content: null,
+        });
+        newRows[Number(i)] = newRow;
+      });
+      return newRows;
+    });
   }, []);
 
   if (!isMounted) return null;
@@ -141,30 +169,31 @@ export default function Home() {
           </div>
 
           {/* Drop Zone */}
-          <div className="border-2 border-black rounded-md p-3 flex flex-nowrap overflow-x-auto gap-3 max-w-full scroll-smooth scroll-auto-hide">
-            {cells.map((cell) => (
-              <DroppableCell key={cell.id} id={cell.id}>
-                {cell.content && cell.content !== null && (
-                  <DraggableBox
-                    key={cell.content}
-                    id={cell.content}
-                    label={cell.content ? cell.content : "iUh"}
-                    // label="IUH"
-                  />
-                  // <div className="bg-blue-500 text-white text-center rounded-md whitespace-nowrap w-40 h-12 flex justify-center items-center shrink-0 p-3">
-                  //   <MarqueeText text={cell.content} />
-                  // </div>
-                )}
-              </DroppableCell>
-            ))}
+          <div className="relative flex border-2 border-black rounded-md gap-3 max-h-80 group">
+            {/* Konten scrollable */}
+            <div className="flex flex-col gap-3 items-start overflow-auto p-3 pr-24 w-full">
+              {Object.entries(rows).map(([row, columns], idx) => (
+                <div key={`${row}-${idx}`} className="flex flex-nowrap gap-3">
+                  {columns.map((cell, i) => (
+                    <DroppableCell key={cell.id} id={cell.id}>
+                      {cell.content && (
+                        <DraggableBox id={cell.content} label={cell.content} />
+                      )}
+                    </DroppableCell>
+                  ))}
+                </div>
+              ))}
+            </div>
 
-            {/* Add Column Button */}
-            <button
-              onClick={addColumn}
-              className="w-16 h-12 border-2 border-dashed border-gray-400 rounded-md flex items-center justify-center text-gray-400 hover:border-blue-400 hover:text-blue-400 transition shrink-0"
-            >
-              <PlusIcon />
-            </button>
+            {/* Tombol fixed di kanan */}
+            <div className="absolute top-0 right-0 bottom-0 w-20 bg-white shadow shadow-gray-400 p-3 transition-all duration-300 opacity-0 group-hover:opacity-100">
+              <button
+                onClick={addColumn}
+                className="w-full h-full border-2 border-dashed border-gray-400 rounded-md flex items-center justify-center text-gray-400 hover:border-blue-400 hover:text-blue-400"
+              >
+                <PlusIcon />
+              </button>
+            </div>
           </div>
 
           {/* Drag Overlay */}
@@ -233,7 +262,6 @@ function DraggableBox({
     </div>
   );
 }
-// <div className="bg-blue-500 text-white text-center rounded-md whitespace-nowrap w-40 h-12 flex justify-center items-center shrink-0 p-3">
 
 function DroppableCell({
   id,
@@ -250,10 +278,10 @@ function DroppableCell({
       className={twMerge(
         "w-40 shrink-0 h-12 rounded-md flex items-center justify-center transition-colors select-none truncate whitespace-nowrap",
         isOver ? "border-blue-400 bg-blue-50" : "border-gray-300",
-        children ? "" : "border-2 border-dashed"
+        children ? "" : "border-2 border-dashed text-gray-300"
       )}
     >
-      {children}
+      {children ?? id}
     </div>
   );
 }
